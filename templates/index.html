@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PAX1000 Polarimeter Control</title>
+    <link rel="stylesheet" href="/css">
+</head>
+<body>
+    <!-- Organization branding displayed in top-right corner -->
+    <div class="brand-identity">light &amp; matter group</div>
+
+    <!-- Interactive color spectrum bar at bottom of page -->
+    <div class="spectrum-bar">
+        <div class="spectrum-segment" style="background-color: #800000;"></div>
+        <div class="spectrum-segment" style="background-color: #FF0000;"></div>
+        <div class="spectrum-segment" style="background-color: #808000;"></div>
+        <div class="spectrum-segment" style="background-color: #FFFF00;"></div>
+        <div class="spectrum-segment" style="background-color: #008000;"></div>
+        <div class="spectrum-segment" style="background-color: #00FF00;"></div>
+        <div class="spectrum-segment" style="background-color: #008080;"></div>
+        <div class="spectrum-segment" style="background-color: #00FFFF;"></div>
+        <div class="spectrum-segment" style="background-color: #000080;"></div>
+        <div class="spectrum-segment" style="background-color: #0000FF;"></div>
+        <div class="spectrum-segment" style="background-color: #800080;"></div>
+        <div class="spectrum-segment" style="background-color: #FF00FF;"></div>
+    </div>
+
+    <!-- Main content container with glassmorphism styling -->
+    <div class="main-container">
+
+        <div class="page-header">
+            <h1>🧭 PAX1000 Polarimeter</h1>
+            <p>Stokes Polarimetry &middot; Live Alignment &middot; SCPI Control</p>
+        </div>
+
+        <div class="status-bar">
+            <div class="status-indicator">
+                <div class="led" id="connection-led"></div>
+                <span id="connection-status">Connecting...</span>
+            </div>
+            <div id="device-info">{{ ipa }}</div>
+        </div>
+
+        <div id="error-banner" style="display:none; background:rgba(231,76,60,0.25); color:#ffcccc; padding:8px 30px; font-family:'Courier New',monospace; font-size:0.85em; border-bottom:1px solid rgba(231,76,60,0.5);"></div>
+
+        <!-- Tab navigation -->
+        <div class="tab-bar">
+            <button class="tab-button active" data-tab="sphere">🌀 Poincar&eacute; Sphere</button>
+            <button class="tab-button" data-tab="ellipse">🌀 Polarization Ellipse</button>
+            <button class="tab-button" data-tab="history">📈 Stokes History</button>
+            <button class="tab-button" data-tab="settings">⚙️ Settings</button>
+            <button class="tab-button" data-tab="help">❓ Help</button>
+        </div>
+
+        <!-- Power / DOP / Stokes parameters: always visible, any tab, full-width strip below tabs -->
+        <div class="live-strip">
+            <span class="item"><span class="label"><span id="ro-power-unit">Power</span><span class="info-dot" title="Total optical power measured by the polarimeter.">i</span></span><span class="value" id="ro-power">&mdash;</span></span>
+            <span class="item"><span class="label">DOP<span class="info-dot" title="Degree of Polarization: the fraction of the light that is polarized. 100% = fully polarized; lower values mean some of the light is unpolarized or depolarized.">i</span></span><span class="value" id="ro-dop">&mdash;</span><span class="label">%</span></span>
+            <span class="item"><span class="label">S0<span class="info-dot" title="Stokes parameter S0: total intensity, normalised to 1.">i</span></span><span class="value" id="ro-s0">&mdash;</span></span>
+            <span class="item"><span class="label">S1<span class="info-dot" title="Stokes parameter S1: preference for horizontal (+1) vs. vertical (-1) linear polarization.">i</span></span><span class="value" id="ro-s1">&mdash;</span></span>
+            <span class="item"><span class="label">S2<span class="info-dot" title="Stokes parameter S2: preference for diagonal D, +45° (+1) vs. anti-diagonal A, -45° (-1) linear polarization.">i</span></span><span class="value" id="ro-s2">&mdash;</span></span>
+            <span class="item"><span class="label">S3<span class="info-dot" title="Stokes parameter S3: preference for right-circular (+1) vs. left-circular (-1) polarization.">i</span></span><span class="value" id="ro-s3">&mdash;</span></span>
+        </div>
+
+        <!-- Display controls: Normalize, History length, Clear, Reset view (sphere-only) -->
+        <div class="controls-strip">
+            <label class="checkbox-control">
+                <input type="checkbox" id="normalize-toggle" onchange="toggleNormalize()">
+                <span class="label">Normalize<span class="info-dot" title="Unchecked (default): the sphere trace and the polarization ellipse are scaled by the actual DOP, so partial polarization correctly shrinks toward the centre / a smaller ellipse - the realistic view. Checked: force full amplitude as if DOP=1, useful for tracking pure orientation when DOP is noisy.">i</span></span>
+            </label>
+            <span class="sep"></span>
+            <span class="label">History<span class="info-dot" title="How many recent samples are kept for the sphere trace, the ellipse trace and the history chart. Applies everywhere at once. &quot;Off&quot; keeps only the current reading. &quot;Infinite&quot; never discards old samples - watch memory on long unattended runs.">i</span></span>
+            <select id="history-len" onchange="setHistoryCapacity()">
+                <option value="1">Off</option>
+                <option value="100">100</option>
+                <option value="250">250</option>
+                <option value="500" selected>500</option>
+                <option value="1000">1000</option>
+                <option value="10000">10000</option>
+                <option value="0">Infinite</option>
+            </select>
+            <button class="mini-btn" onclick="clearHistory()">Clear</button>
+            <span class="sep" id="sphere-reset-sep" style="display:none;"></span>
+            <label class="checkbox-control" id="sphere-reset-control" style="display:none;">
+                <input type="checkbox" id="reset-view-tick" onchange="handleResetViewTick()">
+                <span class="label">Reset sphere view</span>
+            </label>
+        </div>
+
+
+        <!-- ===== TAB: Poincare sphere ===== -->
+        <div class="tab-page active" id="page-sphere">
+            <div class="main-content">
+                <div class="content-card">
+                    <div class="card-header" style="margin-bottom: 0px;">
+                        <div class="primary-info">Poincar&eacute; Sphere &mdash; live state &amp; trace</div>
+                    </div>
+                    <div class="canvas-wrap" id="sphere-wrap"></div>
+                </div>
+                <div class="content-card">
+                    <div class="card-header" style="margin-bottom: 0px;">
+                        <div class="primary-info">Current State</div>
+                    </div>
+                    <div class="kv-list">
+                        <div class="kv-row"><span class="k">Azimuth &theta;<span class="info-dot" title="Orientation angle of the polarization ellipse's major axis, 0-180°.">i</span></span><span class="v" id="s-theta">&mdash;</span></div>
+                        <div class="kv-row"><span class="k">Ellipticity &eta;<span class="info-dot" title="How circular vs. linear the polarization is: 0° = linear, ±45° = circular. The sign gives the handedness.">i</span></span><span class="v" id="s-eta">&mdash;</span></div>
+                        <div class="kv-row"><span class="k">Misadjustment<span class="info-dot" title="How well the light is coupled into the polarimeter (alignment quality). Lower is better - per Thorlabs, keep it below 2% for the specified measurement accuracy.">i</span></span><span class="v" id="s-misadj">&mdash;</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== TAB: Polarization ellipse ===== -->
+        <div class="tab-page" id="page-ellipse">
+            <div class="main-content">
+                <div class="content-card">
+                    <div class="card-header" style="margin-bottom: 0px;">
+                        <div class="primary-info">Polarization Ellipse</div>
+                    </div>
+                    <div class="canvas-wrap" id="ellipse-wrap"></div>
+                </div>
+                <div class="content-card">
+                    <div class="card-header" style="margin-bottom: 0px;">
+                        <div class="primary-info">Ellipse Parameters</div>
+                    </div>
+                    <div class="kv-list">
+                        <div class="kv-row"><span class="k">Orientation &theta;<span class="info-dot" title="Orientation angle of the polarization ellipse's major axis in the lab frame (same quantity as Azimuth θ on the Sphere tab).">i</span></span><span class="v" id="e-orient">&mdash;</span></div>
+                        <div class="kv-row"><span class="k">Ellipticity angle<span class="info-dot" title="Angle whose tangent gives the ratio of the ellipse's minor to major axis. 0° = linear, ±45° = circular.">i</span></span><span class="v" id="e-ellip">&mdash;</span></div>
+                        <div class="kv-row"><span class="k">Handedness<span class="info-dot" title="Direction the polarization vector rotates, viewed looking into the oncoming beam.">i</span></span><span class="v" id="e-hand">&mdash;</span></div>
+                        <div class="kv-row"><span class="k">Axial ratio<span class="info-dot" title="Ratio of the ellipse's minor axis to major axis: 0 = linear polarization, 1 = circular polarization.">i</span></span><span class="v" id="e-axial">&mdash;</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== TAB: Stokes history chart ===== -->
+        <div class="tab-page" id="page-history">
+            <div class="content-card">
+                <div class="card-header" style="margin-bottom: 0px;">
+                    <div class="primary-info">Stokes Parameters &amp; Power vs. Sample</div>
+                </div>
+                <div class="chart-wrap">
+                    <canvas id="stokes-chart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== TAB: Settings ===== -->
+        <div class="tab-page" id="page-settings">
+            <div class="main-content">
+                <div class="content-card">
+                    <div class="card-header" style="margin-bottom: 0px;">
+                        <div class="primary-info">🔌 Device</div>
+                    </div>
+                    <div class="control-group">
+                        <label for="set-resource-select">Detected PAX1000 devices</label>
+                        <select id="set-resource-select" onchange="selectDevice()">
+                            <option value="">Scanning&hellip;</option>
+                        </select>
+                        <div class="hint">Auto-detected via USB (Thorlabs vendor ID 0x1313). Picking one connects to it immediately - no need to type a VISA address. Plugged a polarimeter in just now? Hit Rescan. Note: while a device is connected, Rescan reports that device directly rather than re-scanning the USB bus, since some VISA backends can't see a device that's already claimed by an open session - disconnect first if you need to find a different one.</div>
+                    </div>
+                    <div class="button-group">
+                        <button class="button-blue" onclick="rescanDevices()">Rescan</button>
+                    </div>
+                    <div class="control-group" style="margin-top:18px;">
+                        <label for="set-resource-manual">Manual VISA resource (advanced / no auto-detect)</label>
+                        <input type="text" id="set-resource-manual" placeholder="USB0::0x1313::0x8031::M01219222::INSTR">
+                    </div>
+                    <div class="button-group">
+                        <button class="button-blue" onclick="reconnectDevice()">Connect</button>
+                    </div>
+                    <div class="kv-list" style="margin-top:15px;">
+                        <div class="kv-row"><span class="k">IDN</span><span class="v" id="set-idn">&mdash;</span></div>
+                        <div class="kv-row"><span class="k">Calibration date</span><span class="v" id="set-cal">&mdash;</span></div>
+                        <div class="kv-row"><span class="k">Temperature<span class="info-dot" title="The PAX1000's documented SCPI command set has no numeric temperature reading - only an internal over/under-limit warning flag, shown here. OK means within the device's normal operating range.">i</span></span><span class="v" id="set-temp">&mdash;</span></div>
+                    </div>
+                </div>
+
+                <div class="content-card">
+                    <div class="card-header" style="margin-bottom: 0px;">
+                        <div class="primary-info">🌈 Wavelength &amp; Mode</div>
+                    </div>
+                    <div class="control-group">
+                        <label for="set-wavelength">Wavelength (nm)</label>
+                        <input type="number" id="set-wavelength" step="0.1">
+                    </div>
+                    <div class="kv-list">
+                        <div class="kv-row"><span class="k">Valid range</span><span class="v" id="set-wl-range">&mdash;</span></div>
+                    </div>
+                    <div class="button-group">
+                        <button class="button-blue" onclick="applyWavelength()">Apply</button>
+                    </div>
+                    <div class="control-group" style="margin-top:15px;">
+                        <label for="set-mode">Measurement mode (SENS:CALC)</label>
+                        <select id="set-mode">
+                            {% for k, v in meas_modes.items() %}
+                            <option value="{{ k }}">{{ v }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="hint">
+                            How many waveplate revolutions are averaged per measurement, and the FFT size used to
+                            extract the Stokes parameters from the photodiode signal. <strong>H</strong> = half
+                            revolution (fastest updates), <strong>F</strong> = full revolution, <strong>D</strong> =
+                            double revolution (slowest, most accurate). The number (512/1024/2048) is the FFT
+                            resolution - higher gives a cleaner measurement at the cost of speed. <strong>IDLE</strong>
+                            stops measuring entirely. F1024 is a reasonable default for live alignment.
+                        </div>
+                    </div>
+                    <div class="button-group">
+                        <button class="button-blue" onclick="applyMode()">Apply</button>
+                    </div>
+                </div>
+
+                <div class="content-card">
+                    <div class="card-header" style="margin-bottom: 0px;">
+                        <div class="primary-info">🌀 Waveplate Motor &amp; Power Range</div>
+                    </div>
+                    <div class="toggle-row" id="toggle-motor" onclick="toggleMotor()">
+                        <div class="toggle-switch"></div>
+                        <span id="toggle-motor-label">Motor off</span>
+                    </div>
+                    <div class="control-group">
+                        <label for="set-velocity">Rotation velocity (1/s)</label>
+                        <input type="number" id="set-velocity" step="1">
+                    </div>
+                    <div class="kv-list">
+                        <div class="kv-row"><span class="k">Limits (ext / USB power)</span><span class="v" id="set-vel-limits">&mdash;</span></div>
+                        <div class="kv-row"><span class="k">Settled</span><span class="v" id="set-settled">&mdash;</span></div>
+                    </div>
+                    <div class="button-group">
+                        <button class="button-blue" onclick="applyVelocity()">Apply</button>
+                    </div>
+
+                    <div class="toggle-row" id="toggle-autorange" onclick="toggleAutoRange()" style="margin-top:20px;">
+                        <div class="toggle-switch"></div>
+                        <span id="toggle-autorange-label">Auto range off</span>
+                    </div>
+                    <div class="control-group">
+                        <label for="set-rangeidx">Manual range index (1&ndash;16)</label>
+                        <input type="number" id="set-rangeidx" min="1" max="16" step="1">
+                    </div>
+                    <div class="button-group">
+                        <button class="button-blue" onclick="applyRange()">Apply</button>
+                    </div>
+                </div>
+
+                <div class="content-card">
+                    <div class="card-header" style="margin-bottom: 0px;">
+                        <div class="primary-info">📥 Export</div>
+                    </div>
+                    <div class="kv-list">
+                        <div class="kv-row"><span class="k">Buffered samples</span><span class="v" id="set-export-count">&mdash;</span></div>
+                    </div>
+                    <p style="color: rgba(255,255,255,0.6); font-size: 0.85em; margin: 10px 0 16px 0;">
+                        Downloads everything currently buffered (controlled by the History setting below the
+                        tabs) as a CSV file with a commented header describing each column: power, DOP,
+                        normalised and raw Stokes parameters, azimuth/ellipticity, misadjustment and more.
+                    </p>
+                    <div class="button-group">
+                        <a class="button-blue" href="/api/history/download" download style="text-decoration:none; display:inline-block;">Download history (CSV)</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== TAB: Help ===== -->
+        <div class="tab-page" id="page-help">
+            <div class="content-card">
+                <div class="help-section">
+                    <h2>🧭 Using this page</h2>
+                    <ul>
+                        <li><strong>Poincar&eacute; Sphere:</strong> live 3D state (white dot) and recent trace, drag to rotate, scroll to zoom. The outer circle is the sphere's true outline; the bright cyan circle is the <em>equator</em> (S1&ndash;S2 plane - every purely linear-polarization state lives on it); the two fainter circles are the other two reference meridians, and the three straight lines through the centre connect the six cardinal states: <strong>H</strong>/<strong>V</strong> (horizontal/vertical), <strong>D</strong>/<strong>A</strong> (diagonal +45&deg;/anti-diagonal -45&deg;) and <strong>R</strong>/<strong>L</strong> (right/left circular). Depending on which way you've rotated the view, a meridian can appear as a thin ellipse "inside" the outline - that's normal perspective foreshortening, not a second sphere.</li>
+                        <li><strong>Polarization Ellipse:</strong> the instantaneous polarization ellipse from azimuth &theta; and ellipticity &eta; (bright white), with handedness and axial ratio.</li>
+                        <li><strong>Persistence trace:</strong> both the sphere and the ellipse show recent history as a colour gradient, the same idea as the persistence display on a LeCroy scope - dim/dark indigo is old, bright yellow/white-hot is the most recent, and the current reading is drawn in white on top so it's always unambiguous.</li>
+                        <li><strong>Normalize checkbox</strong> (in the strip below the tabs, checked by default): scales the sphere trace and the ellipse by the actual degree of polarization, so a partially-polarized state correctly sits closer to the centre of the sphere / draws a smaller ellipse rather than always looking fully polarized. Uncheck it to see the idealised orientation only, ignoring DOP.</li>
+                        <li><strong>Stokes History:</strong> S0&ndash;S3 (normalised) and power plotted vs. sample &mdash; useful for aligning a beam by eye while watching the trend.</li>
+                        <li><strong>Settings:</strong> auto-detected device list (no need to type a VISA address - just pick the serial number), wavelength, measurement mode, waveplate motor on/off &amp; speed, power range, and a CSV export of everything currently buffered.</li>
+                        <li>Power, DOP and S0&ndash;S3, plus the trace/history length control (including switching it off), are always shown in the strip below the tabs, regardless of which tab is open. Hover the small "i" next to any label for what it means.</li>
+                    </ul>
+
+                    <h2>📡 SCPI Interface</h2>
+                    <p>
+                        The SCPI server is accessible via TCP/IP on port <strong>5025</strong>. Standard PAX1000
+                        SCPI commands are forwarded straight to the instrument, so anything from the Thorlabs
+                        programmer's reference works unmodified, plus a few local convenience commands listed below.
+                    </p>
+                    <div style="background: rgba(0, 0, 0, 0.5); padding: 15px; border-radius: 8px; margin: 15px 0;">
+                        <strong>Connection Details:</strong><br>
+                        IP Address: <code>{{ ipa }}</code><br>
+                        Port: <code>5025</code><br>
+                        Protocol: <code>TCP/IP</code>
+                    </div>
+                    <pre><code># Connect via telnet
+telnet {{ ipa }} 5025
+
+# Try it:
+*IDN?
+SENS:DATA:LAT?
+POL:STOKES?
+POL:STOKES:RAW?</code></pre>
+
+                    <h3>Standard PAX1000 commands (passthrough)</h3>
+                    <div class="command-list">
+                        <ul>
+                            <li><code>*IDN?</code> - Get device identification</li>
+                            <li><code>SENS:DATA:LAT?</code> - Latest scan: revs, timestamp, mode, flags, TIA range, ADC min/max, revolution time, misadjustment, theta (rad), eta (rad), DOP, power (W)</li>
+                            <li><code>SENS:CORR:WAV &lt;m&gt;</code> / <code>SENS:CORR:WAV?</code> - Set/query wavelength in metres</li>
+                            <li><code>INP:ROT:STAT 0|1</code> / <code>INP:ROT:STAT?</code> - Waveplate motor on/off</li>
+                            <li><code>INP:ROT:VEL &lt;hz&gt;</code> / <code>INP:ROT:VEL?</code> - Set/query rotation speed</li>
+                            <li><code>INP:ROT:SETT?</code> - Is the motor speed settled?</li>
+                            <li><code>SENS:CALC &lt;mode&gt;</code> / <code>SENS:CALC?</code> - Measurement mode (0=IDLE ... 9=D2048)</li>
+                            <li><code>SENS:POW:RANG:AUTO 0|1|2</code> - Power auto-range off/on/once</li>
+                            <li><code>SENS:POW:RANG:IND &lt;1-16&gt;</code> - Manual power range index</li>
+                            <li><code>CAL:STR?</code> - Calibration date string</li>
+                        </ul>
+                    </div>
+
+                    <h3>Local extensions (not part of the PAX1000 itself)</h3>
+                    <div class="command-list">
+                        <ul>
+                            <li><code>POL:STOKES?</code> - Latest <strong>normalised</strong> Stokes parameters <code>S0,S1,S2,S3</code> (S0=1)</li>
+                            <li><code>POL:STOKES:RAW?</code> - Latest <strong>raw</strong> Stokes parameters <code>S0,S1,S2,S3</code> in watts (S0 = optical power)</li>
+                            <li><code>POL:DOP?</code> - Latest degree of polarization (0..1)</li>
+                            <li><code>POL:TEMP:STATUS?</code> - <code>OK</code> / <code>ABOVE_LIMIT</code> / <code>BELOW_LIMIT</code>. This is a warning flag from the instrument, not a numeric temperature - the PAX1000's SCPI set doesn't expose one.</li>
+                            <li><code>POL:CONFIG?</code> - Current device settings as one line (wavelength, mode, motor state/speed, power range, VISA resource), so a measurement can be reproduced later</li>
+                            <li><code>POL:HIST? &lt;n&gt;</code> - Last <code>n</code> history rows as CSV (timestamp,theta,eta,dop,power,s0,s1,s2,s3,rs0,rs1,rs2,rs3)</li>
+                            <li><code>POL:HIST:LEN?</code> - Number of samples currently buffered</li>
+                            <li><code>SYST:HELP?</code> - This command summary</li>
+                        </ul>
+                    </div>
+
+                    <h2>🐍 Minimal control script</h2>
+                    <p>No special packages needed &mdash; this talks to the SCPI server above over a plain socket:</p>
+                    <pre><code>#!/usr/bin/env python3
+import socket
+
+class PAX1000SCPI:
+    """Minimal SCPI client for the PAX1000 polarimeter web/SCPI server"""
+
+    def __init__(self, host='{{ ipa }}', port=5025, timeout=2.0):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.settimeout(timeout)
+        self.sock.connect((host, port))
+        self.sock.recv(1024)  # discard the "Ready" banner
+
+    def query(self, command):
+        self.sock.sendall((command + '\n').encode())
+        return self.sock.recv(4096).decode().strip()
+
+    def write(self, command):
+        self.sock.sendall((command + '\n').encode())
+
+    def close(self):
+        self.sock.close()
+
+    # convenience wrappers
+    def stokes(self):
+        """Normalised Stokes parameters S0..S3 (S0=1)"""
+        return [float(v) for v in self.query('POL:STOKES?').split(',')]
+
+    def stokes_raw(self):
+        """Raw Stokes parameters S0..S3 in watts"""
+        return [float(v) for v in self.query('POL:STOKES:RAW?').split(',')]
+
+    def dop(self):
+        """Degree of polarization, 0..1"""
+        return float(self.query('POL:DOP?'))
+
+    def temp_status(self):
+        """'OK' / 'ABOVE_LIMIT' / 'BELOW_LIMIT' (warning flag, not a reading)"""
+        return self.query('POL:TEMP:STATUS?')
+
+    def config(self):
+        """Current device settings as a dict, e.g. to log alongside a
+        measurement so it can be reproduced later"""
+        raw = self.query('POL:CONFIG?')
+        return dict(kv.split('=', 1) for kv in raw.split(','))
+
+
+if __name__ == '__main__':
+    pax = PAX1000SCPI()
+    print("IDN:", pax.query('*IDN?'))
+    print("Stokes (normalised):", pax.stokes())
+    print("Stokes (raw, W):", pax.stokes_raw())
+    print("DOP:", pax.dop())
+    print("Temperature status:", pax.temp_status())
+    print("Config:", pax.config())
+    pax.close()</code></pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer with copyright and system information -->
+        <div class="page-header">
+            <p>
+                <span class="copyleft">&copy;</span> 2026 Ilja Gerhardt |
+                IP-Address: {{ ipa }} |
+                MAC-Address: {{ mac }} |
+                Last Update: <span id="last-update">Never</span>
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // ===================================================================
+        // State
+        // ===================================================================
+        let history = [];          // local mirror of /api/history
+        let historyCapacity = 500;
+        let connected = false;
+
+        // ===================================================================
+        // Tabs
+        // ===================================================================
+        function showTab(name) {
+            document.querySelectorAll('.tab-button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+            document.querySelectorAll('.tab-page').forEach(p => p.classList.toggle('active', p.id === 'page-' + name));
+            if (name === 'settings') loadSettings();
+            // canvases sized while their tab was hidden (display:none -> clientWidth 0)
+            // need a resize once they're actually visible
+            if (name === 'sphere' && sphereCanvas) resizeSphere();
+            if (name === 'ellipse' && ellipseCanvas) { resizeEllipse(); updateEllipse(history); }
+            if (name === 'history' && stokesCanvas) { resizeChart(); updateChart(history); }
+            // "Reset sphere view" only makes sense while looking at the sphere
+            const showReset = name === 'sphere' ? 'inline-flex' : 'none';
+            document.getElementById('sphere-reset-control').style.display = showReset;
+            document.getElementById('sphere-reset-sep').style.display = name === 'sphere' ? 'inline-block' : 'none';
+        }
+
+        document.querySelectorAll('.tab-button').forEach(btn => {
+            btn.addEventListener('click', () => showTab(btn.dataset.tab));
+        });
+
+        // ===================================================================
+        // Polling: latest sample + history (matches the 300ms-poll pattern
+        // used elsewhere in this project rather than a websocket/SSE client)
+        // ===================================================================
+        function updateReadout(s) {
+            if (!s) return;
+            const mw = s.power * 1000;
+            const powerEl = document.getElementById('ro-power');
+            const unitEl = document.getElementById('ro-power-unit');
+            if (Math.abs(mw) < 1) {
+                powerEl.textContent = (s.power * 1e6).toFixed(2);
+                unitEl.textContent = 'Power, \u00b5W';
+            } else {
+                powerEl.textContent = mw.toFixed(3);
+                unitEl.textContent = 'Power, mW';
+            }
+            document.getElementById('ro-dop').textContent = (s.dop * 100).toFixed(2);
+            document.getElementById('ro-s0').textContent = s.s0.toFixed(3);
+            document.getElementById('ro-s1').textContent = s.s1.toFixed(3);
+            document.getElementById('ro-s2').textContent = s.s2.toFixed(3);
+            document.getElementById('ro-s3').textContent = s.s3.toFixed(3);
+
+            document.getElementById('s-theta').textContent = (s.theta * 180 / Math.PI).toFixed(2) + '\u00b0';
+            document.getElementById('s-eta').textContent = (s.eta * 180 / Math.PI).toFixed(2) + '\u00b0';
+            document.getElementById('s-misadj').textContent = s.misadjustment.toFixed(2) + ' %';
+
+            document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+        }
+
+        function setConnection(ok) {
+            connected = ok;
+            const led = document.getElementById('connection-led');
+            const status = document.getElementById('connection-status');
+            led.className = ok ? 'led on' : 'led';
+            status.textContent = ok ? 'Connected' : 'Disconnected';
+        }
+
+        async function pollStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const s = await res.json();
+                setConnection(s.connected);
+                document.getElementById('device-info').textContent = s.resource || '{{ ipa }}';
+                const banner = document.getElementById('error-banner');
+                if (!s.connected && s.last_error) {
+                    banner.textContent = 'Device error: ' + s.last_error;
+                    banner.style.display = 'block';
+                } else {
+                    banner.style.display = 'none';
+                }
+            } catch (e) { setConnection(false); }
+        }
+
+        async function pollLatest() {
+            let s;
+            try {
+                const res = await fetch('/api/latest');
+                s = await res.json();
+            } catch (e) { return; /* device offline - status banner already shows it */ }
+            if (!s) return;
+
+            history.push(s);
+            if (historyCapacity > 0 && history.length > historyCapacity) history.shift();
+
+            // each view updates independently - one throwing must not block the others
+            try { updateReadout(s); } catch (e) { console.error('updateReadout failed:', e); }
+            try { updateSphere(history); } catch (e) { console.error('updateSphere failed:', e); }
+            try { updateEllipse(history); } catch (e) { console.error('updateEllipse failed:', e); }
+            try { updateChart(history); } catch (e) { console.error('updateChart failed:', e); }
+            try { updateExportCount(); } catch (e) { console.error('updateExportCount failed:', e); }
+        }
+
+        async function loadHistory() {
+            try {
+                const res = await fetch(`/api/history?n=${historyCapacity}`);
+                history = await res.json();
+                if (history.length) updateReadout(history[history.length - 1]);
+                updateSphere(history);
+                updateChart(history);
+                updateExportCount();
+            } catch (e) { console.error(e); }
+        }
+
+        function updateExportCount() {
+            const el = document.getElementById('set-export-count');
+            if (!el) return;
+            const capLabel = historyCapacity <= 0 ? '\u221e' : historyCapacity;
+            el.textContent = `${history.length} / ${capLabel}`;
+        }
+
+        function setHistoryCapacity() {
+            historyCapacity = parseInt(document.getElementById('history-len').value, 10);
+            fetch('/api/history/capacity', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ n: historyCapacity }),
+            }).then(loadHistory);
+        }
+
+        function clearHistory() {
+            fetch('/api/history/clear', { method: 'POST' }).then(() => { history = []; loadHistory(); updateExportCount(); });
+        }
+
+        setInterval(pollStatus, 2000);
+        setInterval(pollLatest, 150);
+        pollStatus();
+        loadHistory();
+
+        // ===================================================================
+        // Persistence colormap (LeCroy-scope style): maps an "age" fraction
+        // 0 (oldest) .. 1 (newest) through indigo -> blue -> green -> yellow
+        // -> red, instead of a single fading color. Used for both the
+        // sphere trace and the ellipse trace.
+        // ===================================================================
+        const PERSISTENCE_STOPS = [
+            [0.00, [70, 30, 130]],   // oldest: indigo
+            [0.25, [0, 90, 220]],    // blue
+            [0.50, [0, 200, 140]],   // green
+            [0.75, [230, 220, 0]],   // yellow
+            [1.00, [255, 50, 50]],   // newest: red
+        ];
+
+        function persistenceColor(frac, alpha) {
+            frac = Math.max(0, Math.min(1, frac));
+            let lo = PERSISTENCE_STOPS[0], hi = PERSISTENCE_STOPS[PERSISTENCE_STOPS.length - 1];
+            for (let i = 0; i < PERSISTENCE_STOPS.length - 1; i++) {
+                if (frac >= PERSISTENCE_STOPS[i][0] && frac <= PERSISTENCE_STOPS[i + 1][0]) {
+                    lo = PERSISTENCE_STOPS[i]; hi = PERSISTENCE_STOPS[i + 1]; break;
+                }
+            }
+            const span = hi[0] - lo[0] || 1;
+            const t = (frac - lo[0]) / span;
+            let r = lo[1][0] + (hi[1][0] - lo[1][0]) * t;
+            let g = lo[1][1] + (hi[1][1] - lo[1][1]) * t;
+            let b = lo[1][2] + (hi[1][2] - lo[1][2]) * t;
+
+            // brightness ramp on top of the hue progression, like phosphor
+            // decay on a scope: oldest points are dim/dark, newest points
+            // are both full-brightness and blown out toward white
+            const dim = 0.35 + 0.65 * frac;
+            r *= dim; g *= dim; b *= dim;
+            const brighten = 0.5 * Math.pow(frac, 2);
+            r += (255 - r) * brighten;
+            g += (255 - g) * brighten;
+            b += (255 - b) * brighten;
+
+            return `rgba(${Math.round(r)},${Math.round(g)},${Math.round(b)},${alpha})`;
+        }
+
+        // ===================================================================
+        // Poincare sphere - pure Canvas2D, no external libraries.
+        // Manual rotation (yaw/pitch) via pointer drag, zoom via wheel.
+        // ===================================================================
+        let sphereCanvas, sphereCtx;
+        let sphereYaw = 0.6, spherePitch = 0.35, sphereDist = 3.0;
+        let sphereDragging = false, sphereDragLastX = 0, sphereDragLastY = 0;
+        let sphereHistory = [];
+
+        // Shared by the sphere and the ellipse: checked (default) = scale by
+        // the actual DOP, so partial polarization correctly shrinks toward
+        // the centre / a smaller ellipse. Unchecked = idealised, always
+        // drawn as if DOP=1 (handy when DOP is noisy and you just want to
+        // track orientation).
+        let dopAware = true;
+
+        // Returns {s1,s2,s3} for a history sample, either as-measured
+        // (already DOP-scaled by the backend) or renormalised to unit
+        // length (DOP=1) if the "Normalize" checkbox is unchecked.
+        function sphereCoords(sample) {
+            if (dopAware) return { s1: sample.s1, s2: sample.s2, s3: sample.s3 };
+            const mag = Math.sqrt(sample.s1 ** 2 + sample.s2 ** 2 + sample.s3 ** 2);
+            if (mag < 1e-6) return { s1: 0, s2: 0, s3: 0 };
+            return { s1: sample.s1 / mag, s2: sample.s2 / mag, s3: sample.s3 / mag };
+        }
+
+        function toggleNormalize() {
+            // unchecked (default) = realistic, scaled by actual DOP
+            // checked = "Normalize" in the literal sense: force unit length / DOP=1
+            dopAware = !document.getElementById('normalize-toggle').checked;
+            drawSphere();
+            updateEllipse(history);
+        }
+
+        function initSphere() {
+            const wrap = document.getElementById('sphere-wrap');
+            sphereCanvas = document.createElement('canvas');
+            wrap.appendChild(sphereCanvas);
+            sphereCtx = sphereCanvas.getContext('2d');
+            resizeSphere();
+            window.addEventListener('resize', resizeSphere);
+
+            sphereCanvas.addEventListener('pointerdown', e => {
+                sphereDragging = true;
+                sphereDragLastX = e.clientX; sphereDragLastY = e.clientY;
+                sphereCanvas.setPointerCapture(e.pointerId);
+            });
+            sphereCanvas.addEventListener('pointermove', e => {
+                if (!sphereDragging) return;
+                const dx = e.clientX - sphereDragLastX, dy = e.clientY - sphereDragLastY;
+                sphereDragLastX = e.clientX; sphereDragLastY = e.clientY;
+                sphereYaw += dx * 0.012;
+                spherePitch = Math.max(-1.5, Math.min(1.5, spherePitch + dy * 0.012));
+                drawSphere();
+            });
+            sphereCanvas.addEventListener('pointerup', () => { sphereDragging = false; });
+            sphereCanvas.addEventListener('pointerleave', () => { sphereDragging = false; });
+            sphereCanvas.addEventListener('wheel', e => {
+                e.preventDefault();
+                sphereDist = Math.max(1.8, Math.min(6, sphereDist + e.deltaY * 0.002));
+                drawSphere();
+            }, { passive: false });
+
+            drawSphere();
+        }
+
+        function resizeSphere() {
+            const wrap = document.getElementById('sphere-wrap');
+            const size = Math.max(200, wrap.clientWidth);
+            sphereCanvas.width = size;
+            sphereCanvas.height = size;
+            drawSphere();
+        }
+
+        function resetSphereView() {
+            sphereYaw = 0.6; spherePitch = 0.35; sphereDist = 3.0;
+            drawSphere();
+        }
+
+        function handleResetViewTick() {
+            resetSphereView();
+            document.getElementById('reset-view-tick').checked = false;
+        }
+
+        function sphereProject(x, y, z, size) {
+            const cy = Math.cos(sphereYaw), sy = Math.sin(sphereYaw);
+            const x1 = x * cy + z * sy, z1 = -x * sy + z * cy, y1 = y;
+            const cp = Math.cos(spherePitch), sp = Math.sin(spherePitch);
+            const y2 = y1 * cp - z1 * sp, z2 = y1 * sp + z1 * cp, x2 = x1;
+            const f = size * 0.36 * sphereDist;
+            const scale = f / (sphereDist - z2);
+            return { x: size / 2 + x2 * scale, y: size / 2 - y2 * scale, z: z2 };
+        }
+
+        // Single source of truth for mapping physical (S1,S2,S3) onto the
+        // screen: S3 (circular, R/L) is the vertical/pole axis, S1 and S2
+        // (linear states H/V/D/A) live on the equatorial plane. Every piece
+        // of the sphere - equator, meridians, axis lines, pole labels AND
+        // the data trace - goes through this one function so they can't
+        // drift out of sync with each other again.
+        function physToScreen(s1, s2, s3, size) {
+            return sphereProject(s1, s3, s2, size);
+        }
+
+        // Physical (S1,S2,S3) points around a given great circle.
+        function physCircle(plane) {
+            const pts = [];
+            for (let i = 0; i <= 72; i++) {
+                const a = (i / 72) * Math.PI * 2, u = Math.cos(a), v = Math.sin(a);
+                if (plane === 's1s2') pts.push([u, v, 0]);   // equator: H/V/D/A states
+                if (plane === 's1s3') pts.push([u, 0, v]);   // meridian through R/L
+                if (plane === 's2s3') pts.push([0, u, v]);   // meridian through R/L
+            }
+            return pts;
+        }
+
+        function drawSphere() {
+            if (!sphereCtx) return;
+            const size = sphereCanvas.width;
+            const ctx = sphereCtx;
+            ctx.clearRect(0, 0, size, size);
+            const cx = size / 2, cy0 = size / 2;
+
+            // True perspective silhouette of a unit sphere viewed from distance
+            // sphereDist: a closed-form radius that depends only on zoom, NOT on
+            // rotation. (An earlier version measured one rotated point as a
+            // stand-in, which wobbled with yaw/pitch and could end up smaller
+            // than the correctly-projected equator - that mismatch was the
+            // "extra smaller circle" people were seeing.)
+            const f = size * 0.36 * sphereDist;
+            const outlineR = f / Math.sqrt(sphereDist * sphereDist - 1);
+            ctx.beginPath();
+            ctx.arc(cx, cy0, outlineR, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(180,140,220,0.55)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // equator (S1-S2 plane: all linear-polarization states, DOP=1, eta=0)
+            const eqPts = physCircle('s1s2').map(([s1, s2, s3]) => physToScreen(s1, s2, s3, size));
+            ctx.beginPath();
+            eqPts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+            ctx.strokeStyle = 'rgba(0,255,255,0.85)';
+            ctx.lineWidth = 1.8;
+            ctx.stroke();
+
+            // the two meridians through the R/L poles, kept faint - mainly to
+            // suggest the 3D shell
+            [['s1s3', 'rgba(150,160,200,0.32)'], ['s2s3', 'rgba(150,160,200,0.32)']]
+                .forEach(([plane, color]) => {
+                    const pts = physCircle(plane).map(([s1, s2, s3]) => physToScreen(s1, s2, s3, size));
+                    ctx.beginPath();
+                    pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                });
+
+            // pole-to-pole axis lines: S1 (H-V), S2 (D-A) on the equatorial
+            // plane, S3 (R-L) is the polar axis
+            [[[-1, 0, 0], [1, 0, 0]], [[0, -1, 0], [0, 1, 0]], [[0, 0, -1], [0, 0, 1]]].forEach(([a, b]) => {
+                const pa = physToScreen(...a, size), pb = physToScreen(...b, size);
+                ctx.beginPath();
+                ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y);
+                ctx.strokeStyle = 'rgba(220,220,255,0.4)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            });
+
+            // H/V/D/A on the equator, R/L at the poles
+            const labels = [
+                ['H', 1.14, 0, 0], ['V', -1.14, 0, 0],
+                ['D', 0, 1.14, 0], ['A', 0, -1.14, 0],
+                ['R', 0, 0, 1.14], ['L', 0, 0, -1.14],
+            ];
+            ctx.font = 'bold 14px Calibri, sans-serif';
+            ctx.fillStyle = 'rgba(255,255,255,0.85)';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            labels.forEach(([txt, s1, s2, s3]) => {
+                const p = physToScreen(s1, s2, s3, size);
+                ctx.fillText(txt, p.x, p.y);
+            });
+
+            const hist = sphereHistory, n = hist.length;
+            for (let i = 0; i < n; i++) {
+                const c = sphereCoords(hist[i]);
+                const p = physToScreen(c.s1, c.s2, c.s3, size);
+                const frac = n <= 1 ? 1 : i / (n - 1);
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+                ctx.fillStyle = persistenceColor(frac, (0.25 + 0.7 * frac).toFixed(2));
+                ctx.fill();
+            }
+
+            if (n > 0) {
+                const c = sphereCoords(hist[n - 1]);
+                const p = physToScreen(c.s1, c.s2, c.s3, size);
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 10, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255,255,255,0.35)';
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 5.5, 0, Math.PI * 2);
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fill();
+            }
+        }
+
+        function updateSphere(hist) {
+            sphereHistory = hist;
+            drawSphere();
+        }
+
+        // ===================================================================
+        // Polarization ellipse (2D canvas)
+        // ===================================================================
+        let ellipseCanvas, ellipseCtx;
+
+        function initEllipse() {
+            const wrap = document.getElementById('ellipse-wrap');
+            ellipseCanvas = document.createElement('canvas');
+            wrap.appendChild(ellipseCanvas);
+            ellipseCtx = ellipseCanvas.getContext('2d');
+            resizeEllipse();
+            window.addEventListener('resize', resizeEllipse);
+        }
+
+        function resizeEllipse() {
+            const wrap = document.getElementById('ellipse-wrap');
+            const size = Math.max(200, wrap.clientWidth);
+            ellipseCanvas.width = size;
+            ellipseCanvas.height = size;
+        }
+
+        function ellipsePoints(theta, eta, dop, cx, cy, R) {
+            const scale = dopAware ? dop : 1.0;
+            const pts = [];
+            for (let i = 0; i <= 96; i++) {
+                const t = (i / 96) * Math.PI * 2;
+                const xp = scale * Math.cos(eta) * Math.cos(t), yp = scale * Math.sin(eta) * Math.sin(t);
+                const x = xp * Math.cos(theta) - yp * Math.sin(theta);
+                const y = xp * Math.sin(theta) + yp * Math.cos(theta);
+                pts.push([cx + x * R, cy - y * R]);
+            }
+            return pts;
+        }
+
+        function updateEllipse(hist) {
+            if (!ellipseCtx || !hist || !hist.length) return;
+            const size = ellipseCanvas.width, cx = size / 2, cy = size / 2, R = size * 0.4;
+            const ctx = ellipseCtx;
+            ctx.clearRect(0, 0, size, size);
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+            for (let i = -4; i <= 4; i++) {
+                const off = (R / 4) * i;
+                ctx.beginPath(); ctx.moveTo(cx - R, cy + off); ctx.lineTo(cx + R, cy + off); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(cx + off, cy - R); ctx.lineTo(cx + off, cy + R); ctx.stroke();
+            }
+            ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+            ctx.beginPath(); ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R); ctx.stroke();
+
+            // reference circle: the maximum-amplitude boundary a fully linear
+            // state would just touch (same role as the sphere's outline)
+            ctx.beginPath();
+            ctx.arc(cx, cy, R, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(180,140,220,0.5)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // LeCroy-style persistence trace of past ellipses - colormap
+            // encodes age (indigo=oldest -> red=newest), not just opacity
+            const n = hist.length;
+            const traceEvery = Math.max(1, Math.floor(n / 60)); // cap how many old ellipses we draw
+            for (let i = 0; i < n - 1; i += traceEvery) {
+                const s = hist[i];
+                const frac = i / (n - 1);
+                const pts = ellipsePoints(s.theta, s.eta, s.dop, cx, cy, R);
+                ctx.strokeStyle = persistenceColor(frac, (0.18 + 0.35 * frac).toFixed(2));
+                ctx.lineWidth = 1.2;
+                ctx.beginPath();
+                pts.forEach(([x, y], j) => j === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
+                ctx.stroke();
+            }
+
+            // current ellipse, bright white and on top - unmistakable
+            // against the persistence trail's red "newest" end
+            const last = hist[n - 1];
+            const theta = last.theta, eta = last.eta;
+            const pts = ellipsePoints(theta, eta, last.dop, cx, cy, R);
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.shadowColor = 'rgba(255,255,255,0.8)';
+            ctx.shadowBlur = 6;
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            pts.forEach(([x, y], i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            ctx.strokeStyle = 'rgba(0,255,255,0.6)'; ctx.lineWidth = 1.2; ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(cx - Math.cos(theta) * R, cy + Math.sin(theta) * R);
+            ctx.lineTo(cx + Math.cos(theta) * R, cy - Math.sin(theta) * R);
+            ctx.stroke(); ctx.setLineDash([]);
+
+            const orientDeg = (theta * 180 / Math.PI).toFixed(2);
+            const ellipDeg = (eta * 180 / Math.PI).toFixed(2);
+            const axialRatio = Math.abs(Math.tan(eta));
+            let hand = 'Linear';
+            if (Math.abs(eta) > 1e-6) hand = eta > 0 ? 'Right elliptical' : 'Left elliptical';
+            if (Math.abs(Math.abs(eta) - Math.PI / 4) < 1e-3) hand = eta > 0 ? 'Right circular' : 'Left circular';
+            document.getElementById('e-orient').textContent = orientDeg + '\u00b0';
+            document.getElementById('e-ellip').textContent = ellipDeg + '\u00b0';
+            document.getElementById('e-hand').textContent = hand;
+            document.getElementById('e-axial').textContent = axialRatio.toFixed(3);
+        }
+
+        // ===================================================================
+        // Stokes history chart - pure Canvas2D, no external libraries.
+        // ===================================================================
+        let stokesCanvas, stokesCtx;
+
+        function initChart() {
+            stokesCanvas = document.getElementById('stokes-chart');
+            stokesCtx = stokesCanvas.getContext('2d');
+            resizeChart();
+            window.addEventListener('resize', resizeChart);
+        }
+
+        function resizeChart() {
+            const wrap = stokesCanvas.parentElement;
+            const dpr = window.devicePixelRatio || 1;
+            const w = Math.max(300, wrap.clientWidth - 30);
+            const h = 380;
+            stokesCanvas.width = w * dpr;
+            stokesCanvas.height = h * dpr;
+            stokesCanvas.style.width = w + 'px';
+            stokesCanvas.style.height = h + 'px';
+            stokesCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        function updateChart(hist) {
+            if (!stokesCtx || !hist.length) return;
+            const w = stokesCanvas.width / (window.devicePixelRatio || 1);
+            const h = stokesCanvas.height / (window.devicePixelRatio || 1);
+            const ctx = stokesCtx;
+            const padL = 44, padR = 60, padT = 14, padB = 26;
+            const plotW = w - padL - padR, plotH = h - padT - padB;
+
+            ctx.clearRect(0, 0, w, h);
+
+            // gridlines + y-axis labels (Stokes, left axis, fixed -1..1).
+            // The +-1 boundary lines are drawn distinctly brighter than the
+            // internal 0.5-step gridlines so the full range reads clearly
+            // even when no data line happens to reach close to -1.
+            ctx.font = 'bold 12px Calibri, sans-serif';
+            ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+            for (let i = -1; i <= 1; i += 0.5) {
+                const y = padT + plotH * (1 - (i + 1.05) / 2.1);
+                const isBoundary = Math.abs(Math.abs(i) - 1) < 1e-9;
+                ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y);
+                ctx.strokeStyle = isBoundary ? 'rgba(220,220,255,0.45)' : 'rgba(255,255,255,0.10)';
+                ctx.lineWidth = isBoundary ? 1.4 : 1;
+                ctx.stroke();
+                ctx.fillStyle = isBoundary ? '#E8E8FF' : '#AAAACC';
+                ctx.fillText(i.toFixed(1), padL - 8, y);
+            }
+
+            const n = hist.length;
+            const xAt = i => padL + (n <= 1 ? plotW : (i / (n - 1)) * plotW);
+            const yAtStokes = v => padT + plotH * (1 - (v + 1.05) / 2.1);
+
+            function plotLine(key, color, width, dash) {
+                ctx.beginPath();
+                ctx.setLineDash(dash || []);
+                hist.forEach((s, i) => {
+                    const x = xAt(i), y = yAtStokes(s[key]);
+                    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+                });
+                ctx.strokeStyle = color;
+                ctx.lineWidth = width;
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            plotLine('s0', '#9999AA', 2.2);
+            plotLine('s1', '#FFB454', 2.8);
+            plotLine('s2', '#00C896', 2.8);
+            plotLine('s3', '#00FFFF', 2.8);
+
+            // power on its own right-hand scale, adaptive unit (uW/mW) so tiny
+            // values don't just collapse to a meaningless "0.000"
+            const powersW = hist.map(s => s.power);
+            let pMinW = Math.min(...powersW), pMaxW = Math.max(...powersW);
+            const useUw = Math.max(Math.abs(pMinW), Math.abs(pMaxW)) < 1e-3;
+            const unit = useUw ? '\u00b5W' : 'mW';
+            const toUnit = wVal => useUw ? wVal * 1e6 : wVal * 1e3;
+            let pMin = toUnit(pMinW), pMax = toUnit(pMaxW);
+            if (pMax - pMin < 1e-9) { pMax += 0.01; pMin -= 0.01; }
+            const yAtPower = v => padT + plotH * (1 - (v - pMin) / (pMax - pMin));
+            ctx.beginPath();
+            ctx.setLineDash([3, 3]);
+            hist.forEach((s, i) => {
+                const x = xAt(i), y = yAtPower(toUnit(s.power));
+                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            });
+            ctx.strokeStyle = 'rgba(255,80,80,0.75)';
+            ctx.lineWidth = 1.8;
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // right-hand power axis labels
+            ctx.fillStyle = '#FF5050';
+            ctx.font = '11px Calibri, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(pMax.toFixed(2) + ' ' + unit, w - padR + 6, padT);
+            ctx.fillText(pMin.toFixed(2) + ' ' + unit, w - padR + 6, padT + plotH);
+
+            // legend
+            const legend = [['S0', '#9999AA'], ['S1', '#FFB454'], ['S2', '#00C896'], ['S3', '#00FFFF'], ['Power', '#FF5050']];
+            ctx.textAlign = 'left'; ctx.font = '11px Calibri, sans-serif';
+            let lx = padL;
+            legend.forEach(([label, color]) => {
+                ctx.fillStyle = color;
+                ctx.fillRect(lx, h - 6, 10, 3);
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillText(label, lx + 14, h - 4);
+                lx += 14 + ctx.measureText(label).width + 18;
+            });
+        }
+
+        // ===================================================================
+        // Settings tab
+        // ===================================================================
+        let motorOn = false, autoRangeOn = false;
+
+        async function loadSettings() {
+            try {
+                const res = await fetch('/api/settings');
+                const s = await res.json();
+                if (s.error) return;
+                document.getElementById('set-resource-manual').value = s.resource || '';
+                document.getElementById('set-idn').textContent = s.idn || '\u2014';
+                document.getElementById('set-cal').textContent = s.calibration || '\u2014';
+                const tempLabels = { OK: 'OK', ABOVE_LIMIT: 'Above limit \u26a0\ufe0f', BELOW_LIMIT: 'Below limit \u26a0\ufe0f' };
+                const lastSample = history[history.length - 1];
+                document.getElementById('set-temp').textContent =
+                    lastSample ? (tempLabels[lastSample.temp_status] || '\u2014') : '\u2014';
+                document.getElementById('set-wavelength').value = s.wavelength_nm.toFixed(2);
+                document.getElementById('set-wl-range').textContent =
+                    `${s.wavelength_min_nm.toFixed(0)} \u2013 ${s.wavelength_max_nm.toFixed(0)} nm`;
+                document.getElementById('set-mode').value = s.mode;
+
+                motorOn = s.motor_on;
+                setToggle('toggle-motor', motorOn, 'Motor on', 'Motor off');
+                document.getElementById('set-velocity').value = s.motor_velocity_hz.toFixed(0);
+                document.getElementById('set-vel-limits').textContent =
+                    `${s.motor_velocity_limit_ext_hz} / ${s.motor_velocity_limit_usb_hz} 1/s`;
+                document.getElementById('set-settled').textContent = s.motor_settled ? 'yes' : 'no';
+
+                autoRangeOn = !!s.power_range_auto;
+                setToggle('toggle-autorange', autoRangeOn, 'Auto range on', 'Auto range off');
+                document.getElementById('set-rangeidx').value = s.power_range_index;
+            } catch (e) { console.error('settings load failed', e); }
+            rescanDevices();
+        }
+
+        async function rescanDevices() {
+            const sel = document.getElementById('set-resource-select');
+            const currentValue = sel.value;
+            sel.innerHTML = '<option value="">Scanning\u2026</option>';
+            try {
+                const res = await fetch('/api/device/scan');
+                const data = await res.json();
+                sel.innerHTML = '';
+                if (!data.devices || !data.devices.length) {
+                    sel.innerHTML = '<option value="">No PAX1000 found - check USB cable / udev permissions</option>';
+                    return;
+                }
+                data.devices.forEach(d => {
+                    const opt = document.createElement('option');
+                    opt.value = d.resource;
+                    opt.textContent = 'Serial ' + d.serial;
+                    sel.appendChild(opt);
+                });
+                // keep whichever device is actually active selected, not just the first one found
+                const statusRes = await fetch('/api/status');
+                const status = await statusRes.json();
+                if (status.resource && [...sel.options].some(o => o.value === status.resource)) {
+                    sel.value = status.resource;
+                } else if (currentValue && [...sel.options].some(o => o.value === currentValue)) {
+                    sel.value = currentValue;
+                }
+            } catch (e) {
+                sel.innerHTML = '<option value="">Scan failed</option>';
+                console.error('device scan failed', e);
+            }
+        }
+
+        function selectDevice() {
+            const resource = document.getElementById('set-resource-select').value;
+            if (!resource) return;
+            fetch('/api/device/reconnect', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resource }),
+            }).then(r => r.json()).then(data => {
+                if (!data.success) alert('Reconnect failed: ' + data.error);
+                loadSettings();
+            });
+        }
+
+        function setToggle(id, on, onText, offText) {
+            const row = document.getElementById(id);
+            row.classList.toggle('on', on);
+            document.getElementById(id + '-label').textContent = on ? onText : offText;
+        }
+
+        async function postSettings(payload) {
+            const res = await fetch('/api/settings', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!data.success) alert('Error applying setting:\n' + JSON.stringify(data.errors || data.error));
+            return data;
+        }
+
+        function reconnectDevice() {
+            const resource = document.getElementById('set-resource-manual').value.trim();
+            fetch('/api/device/reconnect', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resource }),
+            }).then(r => r.json()).then(data => {
+                if (data.success) loadSettings();
+                else alert('Reconnect failed: ' + data.error);
+            });
+        }
+
+        function applyWavelength() {
+            const wl = parseFloat(document.getElementById('set-wavelength').value);
+            if (!isNaN(wl)) postSettings({ wavelength_nm: wl }).then(loadSettings);
+        }
+        function applyMode() {
+            postSettings({ mode: parseInt(document.getElementById('set-mode').value, 10) }).then(loadSettings);
+        }
+        function toggleMotor() {
+            motorOn = !motorOn;
+            setToggle('toggle-motor', motorOn, 'Motor on', 'Motor off');
+            postSettings({ motor_on: motorOn });
+        }
+        function applyVelocity() {
+            const v = parseFloat(document.getElementById('set-velocity').value);
+            if (!isNaN(v)) postSettings({ motor_velocity_hz: v }).then(loadSettings);
+        }
+        function toggleAutoRange() {
+            autoRangeOn = !autoRangeOn;
+            setToggle('toggle-autorange', autoRangeOn, 'Auto range on', 'Auto range off');
+            postSettings({ power_range_auto: autoRangeOn ? 1 : 0 });
+        }
+        function applyRange() {
+            const idx = parseInt(document.getElementById('set-rangeidx').value, 10);
+            if (!isNaN(idx)) postSettings({ power_range_index: idx }).then(loadSettings);
+        }
+
+        // ===================================================================
+        // Boot
+        // ===================================================================
+        document.addEventListener('DOMContentLoaded', () => {
+            initSphere();
+            initEllipse();
+            initChart();
+            showTab('sphere'); // sphere is the default active tab - sync the Reset-view control's visibility
+        });
+    </script>
+</body>
+</html>

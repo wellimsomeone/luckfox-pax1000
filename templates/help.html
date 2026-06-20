@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PAX1000 Polarimeter - Help &amp; Documentation</title>
+    <link rel="stylesheet" href="/css">
+</head>
+<body>
+    <div class="brand-identity">light &amp; matter group</div>
+
+    <div class="spectrum-bar">
+        <div class="spectrum-segment" style="background-color: #800000;"></div>
+        <div class="spectrum-segment" style="background-color: #FF0000;"></div>
+        <div class="spectrum-segment" style="background-color: #808000;"></div>
+        <div class="spectrum-segment" style="background-color: #FFFF00;"></div>
+        <div class="spectrum-segment" style="background-color: #008000;"></div>
+        <div class="spectrum-segment" style="background-color: #00FF00;"></div>
+        <div class="spectrum-segment" style="background-color: #008080;"></div>
+        <div class="spectrum-segment" style="background-color: #00FFFF;"></div>
+        <div class="spectrum-segment" style="background-color: #000080;"></div>
+        <div class="spectrum-segment" style="background-color: #0000FF;"></div>
+        <div class="spectrum-segment" style="background-color: #800080;"></div>
+        <div class="spectrum-segment" style="background-color: #FF00FF;"></div>
+    </div>
+
+    <div class="main-container">
+
+        <div class="page-header">
+            <h1>🧭 PAX1000 Polarimeter</h1>
+            <p>Help &amp; Documentation</p>
+        </div>
+
+        <div class="status-bar">
+            <div style="width: 100%; text-align: center;">
+                <button class="button-blue" onclick="location.href='/'">&larr; Back to Control Panel</button>
+            </div>
+        </div>
+
+        <div class="content-card bottom-section">
+            <div class="help-section">
+                <h2>📡 SCPI Interface</h2>
+                <p>
+                    The PAX1000 polarimeter can be controlled programmatically via a SCPI
+                    (Standard Commands for Programmable Instruments) interface. Standard
+                    PAX1000 SCPI commands are forwarded straight through to the
+                    instrument, so anything from the Thorlabs programmer's reference
+                    works unmodified.
+                </p>
+
+                <h3>Connection Information</h3>
+                <p>
+                    The SCPI server is accessible via TCP/IP on port <strong>5025</strong>.
+                    You can connect using telnet, socket programming, or any
+                    SCPI-compatible library.
+                </p>
+                <div style="background: rgba(0, 0, 0, 0.5); padding: 15px; border-radius: 8px; margin: 15px 0;">
+                    <strong>Connection Details:</strong><br>
+                    IP Address: <code>{{ ipa }}</code><br>
+                    Port: <code>5025</code><br>
+                    Protocol: <code>TCP/IP</code>
+                </div>
+
+                <h3>Testing the Connection</h3>
+                <p>You can test the SCPI interface using telnet from your terminal:</p>
+                <pre><code># Connect via telnet
+telnet {{ ipa }} 5025
+
+# Once connected, try these commands:
+*IDN?                    # Get device identification
+SENS:DATA:LAT?           # Get the latest scan (theta, eta, DOP, power, ...)
+SENS:CORR:WAV?           # Query wavelength setting (m)
+INP:ROT:VEL?              # Query waveplate rotation speed (1/s)
+POL:STOKES?                # Latest normalised Stokes parameters S0,S1,S2,S3
+POL:STOKES:RAW?             # Latest raw Stokes parameters S0,S1,S2,S3 (watts)
+POL:DOP?                     # Latest degree of polarization
+POL:CONFIG?                   # Current settings, to reproduce a measurement</code></pre>
+
+                <h3>Python Control Example</h3>
+                <p>
+                    A minimal Python example using plain socket programming:
+                </p>
+                <pre><code>#!/usr/bin/env python3
+import socket
+
+class PAX1000SCPI:
+    """Simple SCPI interface for the PAX1000 polarimeter"""
+
+    def __init__(self, host='{{ ipa }}', port=5025, timeout=2.0):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.settimeout(timeout)
+        self.sock.connect((host, port))
+        self.sock.recv(1024)  # discard the "Ready" banner
+
+    def query(self, command):
+        self.sock.sendall((command + '\n').encode())
+        return self.sock.recv(4096).decode().strip()
+
+    def write(self, command):
+        self.sock.sendall((command + '\n').encode())
+
+    def close(self):
+        self.sock.close()
+
+    def stokes(self):
+        """Normalised Stokes parameters S0..S3 (S0=1)"""
+        return [float(v) for v in self.query('POL:STOKES?').split(',')]
+
+    def stokes_raw(self):
+        """Raw Stokes parameters S0..S3 in watts"""
+        return [float(v) for v in self.query('POL:STOKES:RAW?').split(',')]
+
+    def dop(self):
+        """Degree of polarization, 0..1"""
+        return float(self.query('POL:DOP?'))
+
+    def config(self):
+        """Current device settings as a dict, to reproduce a measurement"""
+        raw = self.query('POL:CONFIG?')
+        return dict(kv.split('=', 1) for kv in raw.split(','))
+
+
+if __name__ == '__main__':
+    pax = PAX1000SCPI()
+    print("IDN:", pax.query('*IDN?'))
+    print("Latest scan:", pax.query('SENS:DATA:LAT?'))
+    print("Stokes (normalised):", pax.stokes())
+    print("Stokes (raw, W):", pax.stokes_raw())
+    print("DOP:", pax.dop())
+    print("Config:", pax.config())
+    pax.close()</code></pre>
+
+                <h3>Common SCPI Commands</h3>
+                <div class="command-list">
+                    <ul>
+                        <li><code>*IDN?</code> - Get device identification</li>
+                        <li><code>SENS:DATA:LAT?</code> - Latest scan: revs, timestamp, mode, flags, TIA range, ADC min/max, revolution time, misadjustment, theta (rad), eta (rad), DOP, power (W)</li>
+                        <li><code>SENS:CORR:WAV &lt;m&gt;</code> / <code>SENS:CORR:WAV?</code> - Set/query wavelength in metres</li>
+                        <li><code>INP:ROT:STAT 0|1</code> / <code>INP:ROT:STAT?</code> - Waveplate motor on/off</li>
+                        <li><code>INP:ROT:VEL &lt;hz&gt;</code> / <code>INP:ROT:VEL?</code> - Set/query rotation speed</li>
+                        <li><code>INP:ROT:SETT?</code> - Is the motor speed settled?</li>
+                        <li><code>SENS:CALC &lt;mode&gt;</code> / <code>SENS:CALC?</code> - Measurement mode (0=IDLE ... 9=D2048)</li>
+                        <li><code>SENS:POW:RANG:AUTO 0|1|2</code> - Power auto-range off/on/once</li>
+                        <li><code>SENS:POW:RANG:IND &lt;1-16&gt;</code> - Manual power range index</li>
+                        <li><code>CAL:STR?</code> - Calibration date string</li>
+                    </ul>
+                </div>
+
+                <h3>Local Extensions</h3>
+                <p>A few convenience commands are added by this server (not part of the PAX1000 itself):</p>
+                <div class="command-list">
+                    <ul>
+                        <li><code>POL:STOKES?</code> - Latest normalised Stokes parameters as <code>S0,S1,S2,S3</code></li>
+                        <li><code>POL:STOKES:RAW?</code> - Latest raw Stokes parameters as <code>S0,S1,S2,S3</code> in watts (S0 = optical power)</li>
+                        <li><code>POL:DOP?</code> - Latest degree of polarization (0..1)</li>
+                        <li><code>POL:TEMP:STATUS?</code> - <code>OK</code>/<code>ABOVE_LIMIT</code>/<code>BELOW_LIMIT</code> warning flag (the PAX1000 has no numeric temperature reading over SCPI)</li>
+                        <li><code>POL:CONFIG?</code> - Current settings as one line (wavelength, mode, motor, power range), to reproduce a measurement</li>
+                        <li><code>POL:HIST? &lt;n&gt;</code> - Last <code>n</code> history rows as CSV (timestamp,theta,eta,dop,power,s0,s1,s2,s3,rs0,rs1,rs2,rs3)</li>
+                        <li><code>POL:HIST:LEN?</code> - Number of samples currently buffered</li>
+                        <li><code>SYST:HELP?</code> - This command summary</li>
+                    </ul>
+                </div>
+
+                <h3>Tips for Programming</h3>
+                <ul>
+                    <li>Check <code>INP:ROT:SETT?</code> before relying on a fresh measurement after changing the motor speed</li>
+                    <li>Add small delays after setting values to allow the waveplate / hardware to settle</li>
+                    <li>Use try/except blocks to handle network errors gracefully</li>
+                    <li>Close the connection properly when done to free resources</li>
+                    <li>For continuous monitoring, the web interface already polls at a fast rate &mdash; use the History tab to align a beam by eye</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="page-header">
+            <p>
+                <span class="copyleft">&copy;</span> 2026 Ilja Gerhardt |
+                IP-Address: {{ ipa }} |
+                MAC-Address: {{ mac }}
+            </p>
+        </div>
+    </div>
+
+</body>
+</html>
