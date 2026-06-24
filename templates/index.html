@@ -438,16 +438,18 @@ if __name__ == '__main__':
         // ===================================================================
         function updateReadout(s) {
             if (!s) return;
-            const mw = s.power * 1000;
             const powerEl = document.getElementById('ro-power');
-            const unitEl = document.getElementById('ro-power-unit');
-            if (Math.abs(mw) < 1) {
-                powerEl.textContent = (s.power * 1e6).toFixed(2);
-                unitEl.textContent = 'Power, \u00b5W';
+            document.getElementById('ro-power-unit').textContent = 'Power';
+            const absW = Math.abs(s.power);
+            let powerStr;
+            if (absW < 1e-6) {
+                powerStr = (s.power * 1e9).toFixed(2) + '\u00a0nW';
+            } else if (absW < 1e-3) {
+                powerStr = (s.power * 1e6).toFixed(2) + '\u00a0\u00b5W';
             } else {
-                powerEl.textContent = mw.toFixed(3);
-                unitEl.textContent = 'Power, mW';
+                powerStr = (s.power * 1e3).toFixed(3) + '\u00a0mW';
             }
+            powerEl.textContent = powerStr;
             document.getElementById('ro-dop').textContent = (s.dop * 100).toFixed(2);
             document.getElementById('ro-s0').textContent = s.s0.toFixed(3);
             document.getElementById('ro-s1').textContent = s.s1.toFixed(3);
