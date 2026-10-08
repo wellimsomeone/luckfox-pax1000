@@ -155,13 +155,14 @@
                     </div>
                     <div class="control-group">
                         <label for="set-resource-select">Detected PAX1000 devices</label>
-                        <select id="set-resource-select" onchange="selectDevice()">
-                            <option value="">Scanning&hellip;</option>
+                        <select id="set-resource-select">
+                            <option value="">Scan&hellip;</option>
                         </select>
-                        <div class="hint">Auto-detected via USB (Thorlabs vendor ID 0x1313). Picking one connects to it immediately - no need to type a VISA address. Plugged a polarimeter in just now? Hit Rescan. Note: while a device is connected, Rescan reports that device directly rather than re-scanning the USB bus, since some VISA backends can't see a device that's already claimed by an open session - disconnect first if you need to find a different one.</div>
+                        <div class="hint">Detected via USB (Thorlabs vendor ID 0x1313). Pick one and press connect, no need to type a VISA address. Plugged a polarimeter in just now? Hit Scan. Note: while a device is connected, Scan reports that device directly rather than re-scanning the USB bus, since some VISA backends can't see a device that's already claimed by an open session - disconnect first if you need to find a different one.</div>
                     </div>
                     <div class="button-group">
-                        <button class="button-blue" onclick="rescanDevices()">Rescan</button>
+                        <button class="button-blue" onclick="rescanDevices()">Scan</button>
+                        <button class="button-blue" onclick="selectDevice()">Connect</button>
                     </div>
                     <div class="control-group" style="margin-top:18px;">
                         <label for="set-resource-manual">Manual VISA resource (advanced / no auto-detect)</label>
@@ -1052,7 +1053,7 @@ if __name__ == '__main__':
         async function rescanDevices() {
             const sel = document.getElementById('set-resource-select');
             const currentValue = sel.value;
-            sel.innerHTML = '<option value="">Scanning\u2026</option>';
+            sel.innerHTML = '<option value="">Scan\u2026</option>';
             try {
                 const res = await fetch('/api/device/scan');
                 const data = await res.json();
@@ -1061,7 +1062,7 @@ if __name__ == '__main__':
                     sel.innerHTML = '<option value="">No PAX1000 found - check USB cable / udev permissions</option>';
                     return;
                 }
-                data.devices.forEach(d => {
+                data.devices.for(d => {
                     const opt = document.createElement('option');
                     opt.value = d.resource;
                     opt.textContent = 'Serial ' + d.serial;
