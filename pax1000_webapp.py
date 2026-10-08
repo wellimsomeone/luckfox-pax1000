@@ -479,7 +479,13 @@ def main():
     print("\U0001f680 Starting PAX1000 Web Application with SCPI Server")
     print("=" * 60)
 
-    pax = PAX1000(resource=args.resource or PAX1000().resource, simulate=args.simulate)
+    # Try to add first connected Thorlabs Polarimeter directly on startup (adds support to PAX1000 variations)
+    try:
+        found_device = discover_resources()[0].pop("resource")
+    except:
+        found_device = None
+
+    pax = PAX1000(resource=args.resource or found_device or PAX1000().resource, simulate=args.simulate)
     if pax.connect():
         print(f"\u2705 PAX1000 connected: {pax.idn()}")
     else:
