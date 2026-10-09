@@ -83,12 +83,15 @@ def discover_resources(existing=None):
     for r in resources:
         parts = r.split("::")
         # Due to PyVISA using decimal notation a conversion to hexadecimal is done to ensure compatibility
-        parts[1] = str(hex(int(parts[1])))
-        parts[2] = str(hex(int(parts[2])))
-        r = ""
-        for p in parts:
-            r+=p + "::"
-        r = r.strip(':')
+        try:
+            parts[1] = str(hex(int(parts[1])))
+            parts[2] = str(hex(int(parts[2])))
+            r = ""
+            for p in parts:
+                r+=p + "::"
+            r = r.strip(':')
+        except:
+            pass
         
         if len(parts) >= 4 and parts[0].upper().startswith("USB") and parts[1].lower() == THORLABS_VID:
             found.append({
